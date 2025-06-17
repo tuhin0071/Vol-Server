@@ -1,5 +1,4 @@
-// api/index.js or server.js (for local/dev)
-// ✅ Express Server for Volunteer Platform
+
 
 const express = require('express');
 require('dotenv').config();
@@ -8,19 +7,34 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
-// Init app
 const app = express();
 const port = process.env.PORT || 3000;
 
-// 🔐 Middleware
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://ephemeral-toffee-b3e7ef.netlify.app'
+];
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://ephemeral-toffee-b3e7ef.netlify.app'],
-  credentials: true,
+  origin: function(origin, callback){
+    // Allow requests with no origin like mobile apps or curl
+    if(!origin) return callback(null, true);
+    if(allowedOrigins.indexOf(origin) === -1){
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true,  // Allow cookies to be sent
 }));
+
+app.options('*', cors()); // Enable pre-flight across-the-board
+
 app.use(express.json());
 app.use(cookieParser());
 
-// 🔗 MongoDB Connection
+// === MongoDB Setup ===
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: {
@@ -30,7 +44,7 @@ const client = new MongoClient(uri, {
   },
 });
 
-// 🔐 JWT Middleware
+// === JWT Token Verification Middleware ===
 const verifyToken = (req, res, next) => {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ message: 'Unauthorized: No token provided' });
@@ -42,7 +56,7 @@ const verifyToken = (req, res, next) => {
   });
 };
 
-// 🚀 Start Server
+// === Connect to DB and define routes ===
 async function run() {
   try {
     await client.connect();
@@ -51,13 +65,12 @@ async function run() {
     const volunteerCollection = db.collection('volunteer');
     const applicationsCollection = db.collection('applications');
 
-    // 🪪 Issue JWT Token
-    app.post('/jwt', async (req, res) => {
+    // POST /jwt — issue token & set cookie
+    app.post('/jwt', (req, res) => {
       const { email } = req.body;
       if (!email) return res.status(400).json({ message: 'Email is required' });
 
       const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
-
       res.cookie('token', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -66,30 +79,33 @@ async function run() {
       }).json({ success: true });
     });
 
-    // 🔒 Protected Test Route
+    // Example protected route
     app.get('/protected', verifyToken, (req, res) => {
       res.json({ message: 'Access granted!', user: req.user });
     });
 
-    // 📄 Volunteer Routes
+    // GET all volunteers
     app.get('/volunteer', async (req, res) => {
       try {
-        const result = await volunteerCollection.find().toArray();
-        res.json(result);
+        const volunteers = await volunteerCollection.find().toArray();
+        res.json(volunteers);
       } catch {
         res.status(500).json({ error: 'Failed to fetch volunteers' });
       }
     });
 
+    // GET volunteer by id
     app.get('/volunteer/:id', async (req, res) => {
       try {
-        const result = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
-        result ? res.json(result) : res.status(404).json({ error: 'Volunteer not found' });
+        const volunteer = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
+        if (!volunteer) return res.status(404).json({ error: 'Volunteer not found' });
+        res.json(volunteer);
       } catch {
         res.status(500).json({ error: 'Error fetching volunteer' });
       }
     });
 
+    // POST new volunteer
     app.post('/volunteer', async (req, res) => {
       try {
         const result = await volunteerCollection.insertOne(req.body);
@@ -99,6 +115,7 @@ async function run() {
       }
     });
 
+    // PATCH decrease volunteersNeeded
     app.patch('/volunteer/:id/decrease', async (req, res) => {
       try {
         const result = await volunteerCollection.updateOne(
@@ -111,18 +128,18 @@ async function run() {
       }
     });
 
+    // DELETE volunteer by id
     app.delete('/volunteer/:id', async (req, res) => {
       try {
         const result = await volunteerCollection.deleteOne({ _id: new ObjectId(req.params.id) });
-        result.deletedCount
-          ? res.json({ message: 'Volunteer post deleted' })
-          : res.status(404).json({ error: 'Post not found' });
+        if (result.deletedCount === 0) return res.status(404).json({ error: 'Post not found' });
+        res.json({ message: 'Volunteer post deleted' });
       } catch {
         res.status(500).json({ error: 'Error deleting post' });
       }
     });
 
-    // 📩 Application Routes
+    // POST application
     app.post('/applications', async (req, res) => {
       try {
         const result = await applicationsCollection.insertOne(req.body);
@@ -132,18 +149,18 @@ async function run() {
       }
     });
 
-   app.get('/applications', verifyToken, async (req, res) => {
-  try {
-    const userEmail = req.user.email;
-    const result = await applicationsCollection.find({ userEmail }).toArray();
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Error fetching applications' });
-  }
-});
+    
+    app.get('/applications', verifyToken, async (req, res) => {
+      try {
+        const userEmail = req.user.email;
+        const result = await applicationsCollection.find({ userEmail }).toArray();
+        res.json(result);
+      } catch {
+        res.status(500).json({ error: 'Error fetching applications' });
+      }
+    });
 
-
-    // ✅ MongoDB Ping Test
+    // Ping test
     await client.db('admin').command({ ping: 1 });
     console.log('✅ Connected to MongoDB');
   } catch (err) {
@@ -153,16 +170,15 @@ async function run() {
 
 run().catch(console.dir);
 
-// 🌐 Base Route
 app.get('/', (req, res) => {
   res.send('🌍 Volunteer Platform API is running');
 });
 
-// Start local server (not used in Vercel)
+
 if (process.env.NODE_ENV !== 'production') {
   app.listen(port, () => {
     console.log(`✅ Server running at http://localhost:${port}`);
   });
 }
 
-module.exports = app; 
+module.exports = app;
