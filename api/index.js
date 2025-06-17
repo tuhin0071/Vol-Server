@@ -10,7 +10,8 @@ const app = express();
 
 // CORS Setup
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://dynamic-cocada-616ba8.netlify.app/'],
+origin: ['http://localhost:5173', 'https://dynamic-cocada-616ba8.netlify.app'],
+
   credentials: true,
 }));
 app.use(express.json());
@@ -57,7 +58,7 @@ app.post('/jwt', (req, res) => {
   res.cookie('token', token, {
     httpOnly: true,
     secure: true,
-    sameSite: 'strict',
+    sameSite: 'none',
     maxAge: 24 * 60 * 60 * 1000,
   }).json({ success: true });
 });
