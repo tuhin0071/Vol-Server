@@ -12,7 +12,7 @@ const port = process.env.PORT || 3000;
 // CORS configuration
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://ephemeral-toffee-b3e7ef.netlify.app',
+  
 ];
 app.use(cors({
   origin: allowedOrigins,
@@ -69,22 +69,20 @@ app.get('/', (req, res) => {
 
 app.post('/jwt', (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ message: 'Email is required' });
+  console.log('JWT request email:', email);
 
-  try {
-    const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // secure cookies in production
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
-    });
-    res.json({ success: true });
-  } catch (error) {
-    console.error('JWT signing error:', error);
-    res.status(500).json({ error: 'Failed to create token' });
-  }
+  if (!email) return res.status(400).json({ message: 'Email required' });
+
+  const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 24 * 60 * 60 * 1000,
+  }).json({ token });
 });
+
 
 app.get('/protected', verifyToken, (req, res) => {
   res.json({ message: 'Access granted', user: req.user });
