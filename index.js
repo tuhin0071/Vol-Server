@@ -132,14 +132,16 @@ async function run() {
       }
     });
 
-    app.get('/applications', async (req, res) => {
-      try {
-        const result = await applicationsCollection.find().toArray();
-        res.json(result);
-      } catch {
-        res.status(500).json({ error: 'Error fetching applications' });
-      }
-    });
+   app.get('/applications', verifyToken, async (req, res) => {
+  try {
+    const userEmail = req.user.email;
+    const result = await applicationsCollection.find({ userEmail }).toArray();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Error fetching applications' });
+  }
+});
+
 
     // ✅ MongoDB Ping Test
     await client.db('admin').command({ ping: 1 });
