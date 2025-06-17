@@ -12,7 +12,8 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:5173',
   'https://dynamic-cocada-616ba8.netlify.app',
-  'http://localhost:3000', // Add other potential origins
+  'http://localhost:3000',
+  'https://transcendent-capybara-c96c4a.netlify.app' // Add other potential origins
 ];
 
 // Enhanced CORS configuration
