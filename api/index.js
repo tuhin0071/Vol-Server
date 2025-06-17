@@ -9,11 +9,16 @@ require('dotenv').config();
 const app = express();
 
 // CORS Setup
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://dynamic-cocada-616ba8.netlify.app',
+];
 app.use(cors({
-origin: ['http://localhost:5173', 'https://dynamic-cocada-616ba8.netlify.app'],
-
+  origin: allowedOrigins,
   credentials: true,
 }));
+
+// Middleware
 app.use(express.json());
 app.use(cookieParser());
 
@@ -23,15 +28,16 @@ const client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
 
 let volunteerCollection, applicationsCollection;
 
-client.connect().then(() => {
-  const db = client.db('Volunteer-service');
-  volunteerCollection = db.collection('volunteer');
-  applicationsCollection = db.collection('applications');
-  console.log('✅ MongoDB Connected');
-}).catch((err) => {
-  console.error('❌ MongoDB connection failed:', err);
-});
-
+client.connect()
+  .then(() => {
+    const db = client.db('Volunteer-service');
+    volunteerCollection = db.collection('volunteer');
+    applicationsCollection = db.collection('applications');
+    console.log('✅ MongoDB Connected');
+  })
+  .catch((err) => {
+    console.error('❌ MongoDB connection failed:', err);
+  });
 
 // JWT Middleware
 const verifyToken = (req, res, next) => {
@@ -50,38 +56,36 @@ app.get('/', (req, res) => {
   res.send('🌍 Volunteer API is running on Vercel');
 });
 
+// JWT Issue Route
 app.post('/jwt', (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: 'Email required' });
 
   const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
   res.cookie('token', token, {
     httpOnly: true,
     secure: true,
-    sameSite: 'none',
+    sameSite: 'None', // Must be 'None' if cross-site and using credentials
     maxAge: 24 * 60 * 60 * 1000,
-  }).json({ success: true });
+  });
+
+  res.json({ success: true });
 });
 
 // Volunteer Routes
 app.get('/volunteer', async (req, res) => {
   try {
-    console.log("📡 [GET] /volunteer endpoint hit");
-
     if (!volunteerCollection) {
-      console.error("❌ volunteerCollection is undefined");
-      return res.status(500).json({ error: 'volunteerCollection is not initialized' });
+      return res.status(500).json({ error: 'Database not ready' });
     }
 
     const result = await volunteerCollection.find().toArray();
-    console.log("✅ Volunteers fetched:", result.length);
     res.json(result);
   } catch (error) {
-    console.error('❌ Error fetching volunteers:', error);
     res.status(500).json({ error: 'Error fetching volunteers' });
   }
 });
-
 
 app.get('/volunteer/:id', async (req, res) => {
   try {
@@ -143,5 +147,6 @@ app.get('/applications', verifyToken, async (req, res) => {
   }
 });
 
+// Export for Vercel
 module.exports = app;
 module.exports.handler = serverless(app);
