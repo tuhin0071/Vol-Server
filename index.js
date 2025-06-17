@@ -20,9 +20,7 @@ app.use(cookieParser());
 // MongoDB setup
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
-  serverApi: ServerApiVersion.v1,
-  strict: true,
-  deprecationErrors: true,
+  serverApi: ServerApiVersion.v1, 
 });
 
 async function run() {
@@ -59,7 +57,7 @@ async function run() {
 
       res.cookie('token', token, {
         httpOnly: true,
-        secure: false, // ❗ Make true if using HTTPS in production
+        secure: false, 
         sameSite: 'strict',
         maxAge: 24 * 60 * 60 * 1000,
       }).json({ success: true });
