@@ -10,7 +10,7 @@ const app = express();
 
 // CORS Setup
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://your-frontend.vercel.app'],
+  origin: ['http://localhost:5173', 'https://dynamic-cocada-616ba8.netlify.app/'],
   credentials: true,
 }));
 app.use(express.json());
