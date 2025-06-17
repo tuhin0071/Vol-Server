@@ -27,7 +27,10 @@ client.connect().then(() => {
   volunteerCollection = db.collection('volunteer');
   applicationsCollection = db.collection('applications');
   console.log('✅ MongoDB Connected');
-}).catch(console.error);
+}).catch((err) => {
+  console.error('❌ MongoDB connection failed:', err);
+});
+
 
 // JWT Middleware
 const verifyToken = (req, res, next) => {
@@ -62,12 +65,22 @@ app.post('/jwt', (req, res) => {
 // Volunteer Routes
 app.get('/volunteer', async (req, res) => {
   try {
+    console.log("📡 [GET] /volunteer endpoint hit");
+
+    if (!volunteerCollection) {
+      console.error("❌ volunteerCollection is undefined");
+      return res.status(500).json({ error: 'volunteerCollection is not initialized' });
+    }
+
     const result = await volunteerCollection.find().toArray();
+    console.log("✅ Volunteers fetched:", result.length);
     res.json(result);
-  } catch {
+  } catch (error) {
+    console.error('❌ Error fetching volunteers:', error);
     res.status(500).json({ error: 'Error fetching volunteers' });
   }
 });
+
 
 app.get('/volunteer/:id', async (req, res) => {
   try {
