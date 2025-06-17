@@ -8,20 +8,19 @@ require('dotenv').config();
 
 const app = express();
 
-// CORS
+// CORS Setup
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://ephemeral-toffee-b3e7ef.netlify.app'],
+  origin: ['http://localhost:5173', 'https://your-frontend.vercel.app'],
   credentials: true,
 }));
 app.use(express.json());
 app.use(cookieParser());
 
-// MongoDB
+// MongoDB Setup
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
 
-let volunteerCollection;
-let applicationsCollection;
+let volunteerCollection, applicationsCollection;
 
 client.connect().then(() => {
   const db = client.db('Volunteer-service');
@@ -44,7 +43,7 @@ const verifyToken = (req, res, next) => {
 
 // Routes
 app.get('/', (req, res) => {
-  res.send('🌍 Volunteer API running on Vercel');
+  res.send('🌍 Volunteer API is running on Vercel');
 });
 
 app.post('/jwt', (req, res) => {
@@ -52,7 +51,6 @@ app.post('/jwt', (req, res) => {
   if (!email) return res.status(400).json({ message: 'Email required' });
 
   const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
-
   res.cookie('token', token, {
     httpOnly: true,
     secure: true,
