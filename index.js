@@ -1,131 +1,168 @@
-const { MongoClient, ObjectId, ServerApiVersion } = require('mongodb');
-const jwt = require('jsonwebtoken');
-const cookie = require('cookie');
+// api/index.js or server.js (for local/dev)
+// ✅ Express Server for Volunteer Platform
+
+const express = require('express');
 require('dotenv').config();
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
-let cachedClient = null;
-let cachedDb = null;
+// Init app
+const app = express();
+const port = process.env.PORT || 3000;
 
-async function connectToDatabase() {
-  if (cachedClient && cachedDb) return { client: cachedClient, db: cachedDb };
+// 🔐 Middleware
+app.use(cors({
+  origin: ['http://localhost:5173', 'https://ephemeral-toffee-b3e7ef.netlify.app/'],
+  credentials: true,
+}));
+app.use(express.json());
+app.use(cookieParser());
 
-  const client = new MongoClient(process.env.MONGO_URI, {
-    serverApi: ServerApiVersion.v1,
+// 🔗 MongoDB Connection
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  });
-  await client.connect();
-  const db = client.db('Volunteer-service');
+  },
+});
 
-  cachedClient = client;
-  cachedDb = db;
-  return { client, db };
+// 🔐 JWT Middleware
+const verifyToken = (req, res, next) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ message: 'Unauthorized: No token provided' });
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(403).json({ message: 'Forbidden: Invalid token' });
+    req.user = decoded;
+    next();
+  });
+};
+
+// 🚀 Start Server
+async function run() {
+  try {
+    await client.connect();
+
+    const db = client.db('Volunteer-service');
+    const volunteerCollection = db.collection('volunteer');
+    const applicationsCollection = db.collection('applications');
+
+    // 🪪 Issue JWT Token
+    app.post('/jwt', async (req, res) => {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ message: 'Email is required' });
+
+      const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000,
+      }).json({ success: true });
+    });
+
+    // 🔒 Protected Test Route
+    app.get('/protected', verifyToken, (req, res) => {
+      res.json({ message: 'Access granted!', user: req.user });
+    });
+
+    // 📄 Volunteer Routes
+    app.get('/volunteer', async (req, res) => {
+      try {
+        const result = await volunteerCollection.find().toArray();
+        res.json(result);
+      } catch {
+        res.status(500).json({ error: 'Failed to fetch volunteers' });
+      }
+    });
+
+    app.get('/volunteer/:id', async (req, res) => {
+      try {
+        const result = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
+        result ? res.json(result) : res.status(404).json({ error: 'Volunteer not found' });
+      } catch {
+        res.status(500).json({ error: 'Error fetching volunteer' });
+      }
+    });
+
+    app.post('/volunteer', async (req, res) => {
+      try {
+        const result = await volunteerCollection.insertOne(req.body);
+        res.status(201).json(result);
+      } catch {
+        res.status(500).json({ error: 'Error creating volunteer post' });
+      }
+    });
+
+    app.patch('/volunteer/:id/decrease', async (req, res) => {
+      try {
+        const result = await volunteerCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $inc: { volunteersNeeded: -1 } }
+        );
+        res.json(result);
+      } catch {
+        res.status(500).json({ error: 'Error updating volunteer count' });
+      }
+    });
+
+    app.delete('/volunteer/:id', async (req, res) => {
+      try {
+        const result = await volunteerCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+        result.deletedCount
+          ? res.json({ message: 'Volunteer post deleted' })
+          : res.status(404).json({ error: 'Post not found' });
+      } catch {
+        res.status(500).json({ error: 'Error deleting post' });
+      }
+    });
+
+    // 📩 Application Routes
+    app.post('/applications', async (req, res) => {
+      try {
+        const result = await applicationsCollection.insertOne(req.body);
+        res.status(201).json(result);
+      } catch {
+        res.status(500).json({ error: 'Error submitting application' });
+      }
+    });
+
+   app.get('/applications', verifyToken, async (req, res) => {
+  try {
+    const userEmail = req.user.email;
+    const result = await applicationsCollection.find({ userEmail }).toArray();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Error fetching applications' });
+  }
+});
+
+
+    // ✅ MongoDB Ping Test
+    await client.db('admin').command({ ping: 1 });
+    console.log('✅ Connected to MongoDB');
+  } catch (err) {
+    console.error('MongoDB Connection Error:', err);
+  }
 }
 
-module.exports = async (req, res) => {
-  const { method, url } = req;
-  const { db } = await connectToDatabase();
+run().catch(console.dir);
 
-  // Parse cookies
-  const cookies = cookie.parse(req.headers.cookie || '');
-  const token = cookies.token;
+// 🌐 Base Route
+app.get('/', (req, res) => {
+  res.send('🌍 Volunteer Platform API is running');
+});
 
-  // JWT helper
-  const verifyToken = () => {
-    if (!token) return null;
-    try {
-      return jwt.verify(token, process.env.JWT_SECRET);
-    } catch {
-      return null;
-    }
-  };
+// Start local server (not used in Vercel)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`✅ Server running at http://localhost:${port}`);
+  });
+}
 
-  // Routing
-  try {
-    if (method === 'GET' && url === '/') {
-      return res.status(200).send('🌍 Volunteer Platform API is running');
-    }
-
-    if (method === 'GET' && url === '/volunteer') {
-      const data = await db.collection('volunteer').find().toArray();
-      return res.status(200).json(data);
-    }
-
-    if (method === 'POST' && url === '/volunteer') {
-      let body = '';
-      req.on('data', chunk => { body += chunk });
-      req.on('end', async () => {
-        const volunteer = JSON.parse(body);
-        const result = await db.collection('volunteer').insertOne(volunteer);
-        return res.status(201).json(result);
-      });
-      return;
-    }
-
-    if (method === 'GET' && url.startsWith('/volunteer/')) {
-      const id = url.split('/')[2];
-      if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
-      const result = await db.collection('volunteer').findOne({ _id: new ObjectId(id) });
-      if (!result) return res.status(404).json({ error: 'Not found' });
-      return res.status(200).json(result);
-    }
-
-    if (method === 'PATCH' && url.endsWith('/decrease')) {
-      const id = url.split('/')[2];
-      if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
-      const result = await db.collection('volunteer').updateOne(
-        { _id: new ObjectId(id) },
-        { $inc: { volunteersNeeded: -1 } }
-      );
-      return res.status(200).json(result);
-    }
-
-    if (method === 'DELETE' && url.startsWith('/volunteer/')) {
-      const id = url.split('/')[2];
-      if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
-      const result = await db.collection('volunteer').deleteOne({ _id: new ObjectId(id) });
-      return res.status(200).json(result);
-    }
-
-    if (method === 'POST' && url === '/applications') {
-      let body = '';
-      req.on('data', chunk => { body += chunk });
-      req.on('end', async () => {
-        const data = JSON.parse(body);
-        const result = await db.collection('applications').insertOne(data);
-        return res.status(201).json(result);
-      });
-      return;
-    }
-
-    if (method === 'GET' && url === '/applications') {
-      const user = verifyToken();
-      if (!user) return res.status(401).json({ error: 'Unauthorized' });
-      const result = await db.collection('applications').find({ userEmail: user.email }).toArray();
-      return res.status(200).json(result);
-    }
-
-    if (method === 'POST' && url === '/jwt') {
-      let body = '';
-      req.on('data', chunk => { body += chunk });
-      req.on('end', () => {
-        const { email } = JSON.parse(body);
-        const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.setHeader('Set-Cookie', cookie.serialize('token', token, {
-          httpOnly: true,
-          maxAge: 86400,
-          sameSite: 'Strict',
-          path: '/',
-          secure: true,
-        }));
-        return res.status(200).json({ success: true });
-      });
-      return;
-    }
-
-    return res.status(404).json({ error: 'Route not found' });
-  } catch (err) {
-    console.error('Error in API:', err);
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-};
+module.exports = app; 
