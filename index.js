@@ -8,34 +8,47 @@ require('dotenv').config();
 
 const app = express();
 
-// CORS Setup - Updated with better configuration
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://dynamic-cocada-616ba8.netlify.app',
-  'http://localhost:3000',
-  'https://transcendent-capybara-c96c4a.netlify.app' // Add other potential origins
-];
+// AGGRESSIVE CORS FIX - Allow all origins temporarily
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  
+  // Allow specific origins or all for development
+  const allowedOrigins = [
+    'https://transcendent-capybara-c96c4a.netlify.app',
+    'https://dynamic-cocada-616ba8.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ];
+  
+  if (allowedOrigins.includes(origin) || !origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
+  
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie, X-Requested-With');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
 
-// Enhanced CORS configuration
+// Backup CORS with cors package
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    } else {
-      return callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: [
+    'https://transcendent-capybara-c96c4a.netlify.app',
+    'https://dynamic-cocada-616ba8.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
-  exposedHeaders: ['Set-Cookie'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With'],
 }));
-
-// Handle preflight requests explicitly
-app.options('*', cors());
 
 // Middleware
 app.use(express.json());
@@ -72,23 +85,26 @@ const verifyToken = (req, res, next) => {
 
 // Routes
 app.get('/', (req, res) => {
-  res.json({ message: '🌍 Volunteer API is running on Vercel', status: 'OK' });
+  res.json({ 
+    message: '🌍 Volunteer API is running on Vercel', 
+    status: 'OK',
+    cors: 'enabled',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// JWT Issue Route - Fixed
+// JWT Issue Route
 app.post('/jwt', (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: 'Email required' });
 
   const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-  // Set cookie with proper configuration for cross-origin
   res.cookie('token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // Only secure in production
+    secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    domain: process.env.NODE_ENV === 'production' ? '.vercel.app' : undefined,
+    maxAge: 24 * 60 * 60 * 1000,
   });
 
   res.json({ success: true, message: 'Token issued successfully' });
@@ -97,15 +113,20 @@ app.post('/jwt', (req, res) => {
 // Volunteer Routes
 app.get('/volunteer', async (req, res) => {
   try {
+    console.log('📋 Fetching volunteers...');
+    
     if (!volunteerCollection) {
+      console.log('❌ Database not ready');
       return res.status(500).json({ error: 'Database not ready' });
     }
 
     const result = await volunteerCollection.find().toArray();
+    console.log(`✅ Found ${result.length} volunteers`);
+    
     res.json(result);
   } catch (error) {
-    console.error('Error fetching volunteers:', error);
-    res.status(500).json({ error: 'Error fetching volunteers' });
+    console.error('❌ Error fetching volunteers:', error);
+    res.status(500).json({ error: 'Error fetching volunteers', details: error.message });
   }
 });
 
@@ -125,6 +146,7 @@ app.get('/volunteer/:id', async (req, res) => {
 
 app.post('/volunteer', async (req, res) => {
   try {
+    console.log('📝 Creating new volunteer post:', req.body);
     const result = await volunteerCollection.insertOne(req.body);
     res.status(201).json(result);
   } catch (error) {
@@ -169,6 +191,7 @@ app.delete('/volunteer/:id', async (req, res) => {
 // Applications
 app.post('/applications', async (req, res) => {
   try {
+    console.log('📨 Creating new application:', req.body);
     const result = await applicationsCollection.insertOne(req.body);
     res.status(201).json(result);
   } catch (error) {
@@ -185,6 +208,27 @@ app.get('/applications', verifyToken, async (req, res) => {
     console.error('Error fetching applications:', error);
     res.status(500).json({ error: 'Error fetching applications' });
   }
+});
+
+// Catch all route for debugging
+app.use('*', (req, res) => {
+  console.log(`🔍 Unhandled route: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    error: 'Route not found', 
+    method: req.method, 
+    path: req.originalUrl,
+    availableRoutes: [
+      'GET /',
+      'POST /jwt',
+      'GET /volunteer',
+      'GET /volunteer/:id',
+      'POST /volunteer',
+      'PATCH /volunteer/:id/decrease',
+      'DELETE /volunteer/:id',
+      'POST /applications',
+      'GET /applications'
+    ]
+  });
 });
 
 // Export for Vercel
