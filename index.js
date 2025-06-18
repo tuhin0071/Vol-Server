@@ -7,8 +7,8 @@ const app = express();
 
 // CORS setup - Updated to include port 5174
 const allowedOrigins = [
-  'https://transcendent-capybara-c96c4a.netlify.app',
-  'https://dynamic-cocada-616ba8.netlify.app',
+  
+  'https://dulcet-wisp-054d6c.netlify.app/',
   'http://localhost:5173', 
   'http://localhost:5174', 
   'http://localhost:3000',
