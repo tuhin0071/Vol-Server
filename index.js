@@ -1,236 +1,241 @@
 const express = require('express');
-const serverless = require('serverless-http');
 const cors = require('cors');
-const jwt = require('jsonwebtoken');
-const cookieParser = require('cookie-parser');
 const { MongoClient, ObjectId, ServerApiVersion } = require('mongodb');
 require('dotenv').config();
 
 const app = express();
 
-// AGGRESSIVE CORS FIX - Allow all origins temporarily
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  
-  // Allow specific origins or all for development
-  const allowedOrigins = [
-    'https://transcendent-capybara-c96c4a.netlify.app',
-    'https://dynamic-cocada-616ba8.netlify.app',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ];
-  
-  if (allowedOrigins.includes(origin) || !origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  }
-  
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie, X-Requested-With');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
+// CORS setup - Updated to include port 5174
+const allowedOrigins = [
+  'https://transcendent-capybara-c96c4a.netlify.app',
+  'https://dynamic-cocada-616ba8.netlify.app',
+  'http://localhost:5173', // React dev server origin
+  'http://localhost:5174', // Additional React dev server port
+  'http://localhost:3000'  // Backend local server origin (if needed)
+];
 
-// Backup CORS with cors package
 app.use(cors({
-  origin: [
-    'https://transcendent-capybara-c96c4a.netlify.app',
-    'https://dynamic-cocada-616ba8.netlify.app',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ],
+  origin: (origin, callback) => {
+    console.log('🔍 Request from origin:', origin); // Debug log
+    // Allow requests with no origin like curl or Postman
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('❌ CORS blocked origin:', origin);
+      callback(new Error('CORS policy: Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With'],
 }));
 
-// Middleware
-app.use(express.json());
-app.use(cookieParser());
+app.use(express.json()); // For parsing JSON bodies
 
-// MongoDB Setup
+// MongoDB client setup with better error handling
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+// Check if environment variables are loaded
+if (!process.env.DB_USER || !process.env.DB_PASS) {
+  console.error('❌ Missing database credentials in environment variables');
+  console.log('🔍 DB_USER:', process.env.DB_USER ? 'Set' : 'Missing');
+  console.log('🔍 DB_PASS:', process.env.DB_PASS ? 'Set' : 'Missing');
+}
+
 const client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
 
-let volunteerCollection, applicationsCollection;
+let volunteerCollection;
+let applicationsCollection;
+let isDbConnected = false;
 
-client.connect()
-  .then(() => {
+async function startServer() {
+  try {
+    console.log('🔄 Attempting to connect to MongoDB...');
+    await client.connect();
+    
+    // Test the connection
+    await client.db("admin").command({ ping: 1 });
+    
     const db = client.db('Volunteer-service');
     volunteerCollection = db.collection('volunteer');
     applicationsCollection = db.collection('applications');
-    console.log('✅ MongoDB Connected');
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB connection failed:', err);
-  });
+    isDbConnected = true;
+    
+    console.log('✅ MongoDB Connected successfully');
 
-// JWT Middleware
-const verifyToken = (req, res, next) => {
-  const token = req.cookies.token;
-  if (!token) return res.status(401).json({ message: 'Unauthorized: No token' });
+    // Only start listening if running as a standalone server
+    if (process.env.NODE_ENV !== 'serverless') {
+      const PORT = process.env.PORT || 3000;
+      app.listen(PORT, () => {
+        console.log(`🚀 Server running at http://localhost:${PORT}`);
+        console.log('🔗 Allowed CORS origins:', allowedOrigins);
+      });
+    }
+  } catch (err) {
+    console.error('❌ MongoDB connection failed:', err.message);
+    console.error('🔍 Full error:', err);
+    // Don't exit process, keep server running for debugging
+    isDbConnected = false;
+  }
+}
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(403).json({ message: 'Forbidden: Invalid token' });
-    req.user = decoded;
-    next();
-  });
+startServer();
+
+// Middleware to check database connection
+const checkDbConnection = (req, res, next) => {
+  if (!isDbConnected) {
+    return res.status(503).json({ 
+      error: 'Database not connected',
+      message: 'Please check your MongoDB connection and credentials'
+    });
+  }
+  next();
 };
 
-// Routes
+// Routes with better error handling
+
 app.get('/', (req, res) => {
   res.json({ 
-    message: '🌍 Volunteer API is running on Vercel', 
+    message: 'Volunteer API is running', 
     status: 'OK',
-    cors: 'enabled',
-    timestamp: new Date().toISOString()
+    dbConnected: isDbConnected,
+    allowedOrigins: allowedOrigins
   });
 });
 
-// JWT Issue Route
-app.post('/jwt', (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ message: 'Email required' });
-
-  const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
-
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
-    maxAge: 24 * 60 * 60 * 1000,
-  });
-
-  res.json({ success: true, message: 'Token issued successfully' });
-});
-
-// Volunteer Routes
-app.get('/volunteer', async (req, res) => {
+app.get('/volunteer', checkDbConnection, async (req, res) => {
   try {
-    console.log('📋 Fetching volunteers...');
-    
-    if (!volunteerCollection) {
-      console.log('❌ Database not ready');
-      return res.status(500).json({ error: 'Database not ready' });
-    }
-
-    const result = await volunteerCollection.find().toArray();
-    console.log(`✅ Found ${result.length} volunteers`);
-    
-    res.json(result);
-  } catch (error) {
-    console.error('❌ Error fetching volunteers:', error);
-    res.status(500).json({ error: 'Error fetching volunteers', details: error.message });
+    console.log('📥 GET /volunteer request received');
+    const volunteers = await volunteerCollection.find().toArray();
+    console.log('✅ Found', volunteers.length, 'volunteers');
+    res.json(volunteers);
+  } catch (err) {
+    console.error('❌ Error fetching volunteers:', err.message);
+    console.error('🔍 Full error:', err);
+    res.status(500).json({ 
+      error: 'Error fetching volunteers',
+      details: err.message
+    });
   }
 });
 
-app.get('/volunteer/:id', async (req, res) => {
+app.get('/volunteer/:id', checkDbConnection, async (req, res) => {
+  if (!ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid ID format' });
+  }
+  
   try {
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: 'Invalid ID format' });
+    const volunteer = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
+    if (!volunteer) {
+      return res.status(404).json({ error: 'Volunteer not found' });
     }
-    
-    const result = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
-    result ? res.json(result) : res.status(404).json({ error: 'Not found' });
-  } catch (error) {
-    console.error('Error fetching volunteer:', error);
-    res.status(500).json({ error: 'Error fetching volunteer' });
+    res.json(volunteer);
+  } catch (err) {
+    console.error('❌ Error fetching volunteer:', err.message);
+    res.status(500).json({ 
+      error: 'Error fetching volunteer',
+      details: err.message
+    });
   }
 });
 
-app.post('/volunteer', async (req, res) => {
+app.post('/volunteer', checkDbConnection, async (req, res) => {
   try {
-    console.log('📝 Creating new volunteer post:', req.body);
+    console.log('📥 POST /volunteer request received:', req.body);
     const result = await volunteerCollection.insertOne(req.body);
+    console.log('✅ Volunteer created with ID:', result.insertedId);
     res.status(201).json(result);
-  } catch (error) {
-    console.error('Error creating post:', error);
-    res.status(500).json({ error: 'Error creating post' });
+  } catch (err) {
+    console.error('❌ Error creating volunteer:', err.message);
+    res.status(500).json({ 
+      error: 'Error creating volunteer',
+      details: err.message
+    });
   }
 });
 
-app.patch('/volunteer/:id/decrease', async (req, res) => {
+app.patch('/volunteer/:id/decrease', checkDbConnection, async (req, res) => {
+  if (!ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid ID format' });
+  }
+  
   try {
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: 'Invalid ID format' });
-    }
-    
     const result = await volunteerCollection.updateOne(
       { _id: new ObjectId(req.params.id) },
       { $inc: { volunteersNeeded: -1 } }
     );
-    res.json(result);
-  } catch (error) {
-    console.error('Error updating count:', error);
-    res.status(500).json({ error: 'Error updating count' });
-  }
-});
-
-app.delete('/volunteer/:id', async (req, res) => {
-  try {
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: 'Invalid ID format' });
+    
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Volunteer not found' });
     }
     
-    const result = await volunteerCollection.deleteOne({ _id: new ObjectId(req.params.id) });
-    result.deletedCount
-      ? res.json({ message: 'Post deleted' })
-      : res.status(404).json({ error: 'Not found' });
-  } catch (error) {
-    console.error('Error deleting post:', error);
-    res.status(500).json({ error: 'Error deleting post' });
-  }
-});
-
-// Applications
-app.post('/applications', async (req, res) => {
-  try {
-    console.log('📨 Creating new application:', req.body);
-    const result = await applicationsCollection.insertOne(req.body);
-    res.status(201).json(result);
-  } catch (error) {
-    console.error('Error submitting application:', error);
-    res.status(500).json({ error: 'Error submitting application' });
-  }
-});
-
-app.get('/applications', verifyToken, async (req, res) => {
-  try {
-    const result = await applicationsCollection.find({ userEmail: req.user.email }).toArray();
     res.json(result);
-  } catch (error) {
-    console.error('Error fetching applications:', error);
-    res.status(500).json({ error: 'Error fetching applications' });
+  } catch (err) {
+    console.error('❌ Error updating volunteersNeeded:', err.message);
+    res.status(500).json({ 
+      error: 'Error updating volunteersNeeded',
+      details: err.message
+    });
   }
 });
 
-// Catch all route for debugging
-app.use('*', (req, res) => {
-  console.log(`🔍 Unhandled route: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ 
-    error: 'Route not found', 
-    method: req.method, 
-    path: req.originalUrl,
-    availableRoutes: [
-      'GET /',
-      'POST /jwt',
-      'GET /volunteer',
-      'GET /volunteer/:id',
-      'POST /volunteer',
-      'PATCH /volunteer/:id/decrease',
-      'DELETE /volunteer/:id',
-      'POST /applications',
-      'GET /applications'
-    ]
+app.delete('/volunteer/:id', checkDbConnection, async (req, res) => {
+  if (!ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid ID format' });
+  }
+  
+  try {
+    const result = await volunteerCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'Volunteer not found' });
+    }
+    res.json({ message: 'Volunteer post deleted successfully' });
+  } catch (err) {
+    console.error('❌ Error deleting volunteer:', err.message);
+    res.status(500).json({ 
+      error: 'Error deleting volunteer',
+      details: err.message
+    });
+  }
+});
+
+app.post('/applications', checkDbConnection, async (req, res) => {
+  try {
+    console.log('📥 POST /applications request received:', req.body);
+    const result = await applicationsCollection.insertOne(req.body);
+    console.log('✅ Application created with ID:', result.insertedId);
+    res.status(201).json(result);
+  } catch (err) {
+    console.error('❌ Error creating application:', err.message);
+    res.status(500).json({ 
+      error: 'Error creating application',
+      details: err.message
+    });
+  }
+});
+
+app.get('/applications', checkDbConnection, async (req, res) => {
+  try {
+    console.log('📥 GET /applications request received');
+    const applications = await applicationsCollection.find().toArray();
+    console.log('✅ Found', applications.length, 'applications');
+    res.json(applications);
+  } catch (err) {
+    console.error('❌ Error fetching applications:', err.message);
+    res.status(500).json({ 
+      error: 'Error fetching applications',
+      details: err.message
+    });
+  }
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('🚨 Unhandled error:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: err.message
   });
 });
 
-// Export for Vercel
+// Export for serverless deployment (e.g., Vercel)
 module.exports = app;
-module.exports.handler = serverless(app);
+module.exports.handler = require('serverless-http')(app);
