@@ -9,15 +9,16 @@ const app = express();
 const allowedOrigins = [
   'https://transcendent-capybara-c96c4a.netlify.app',
   'https://dynamic-cocada-616ba8.netlify.app',
-  'http://localhost:5173', // React dev server origin
-  'http://localhost:5174', // Additional React dev server port
-  'http://localhost:3000'  // Backend local server origin (if needed)
+  'http://localhost:5173', 
+  'http://localhost:5174', 
+  'http://localhost:3000',
+  'https://volunteer-server-sepia.vercel.app/'  
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    console.log('🔍 Request from origin:', origin); // Debug log
-    // Allow requests with no origin like curl or Postman
+    console.log('🔍 Request from origin:', origin); 
+    
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -28,7 +29,7 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json()); // For parsing JSON bodies
+app.use(express.json()); 
 
 // MongoDB client setup with better error handling
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -90,7 +91,7 @@ const checkDbConnection = (req, res, next) => {
   next();
 };
 
-// Routes with better error handling
+
 
 app.get('/', (req, res) => {
   res.json({ 
