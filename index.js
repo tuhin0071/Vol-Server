@@ -1,77 +1,78 @@
 const express = require('express');
 const cors = require('cors');
+const serverless = require('serverless-http');
 const { MongoClient, ObjectId, ServerApiVersion } = require('mongodb');
 require('dotenv').config();
 
 const app = express();
 
-// ✅ Allowed origins - no trailing slashes
+// ✅ Allowed origins (no trailing slashes)
 const allowedOrigins = [
   'https://dulcet-wisp-054d6c.netlify.app',
-  'https://heroic-heliotrope-56f49d.netlify.app'
- 
+  'https://heroic-heliotrope-56f49d.netlify.app',
 ];
 
-// ✅ CORS Setup
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      console.log('🔗 Request Origin:', origin);
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.warn('❌ CORS Blocked Origin:', origin);
-        callback(new Error('CORS policy: This origin is not allowed.'));
-      }
-    },
-    credentials: true,
-  })
-);
+// ✅ CORS setup
+app.use(cors({
+  origin: (origin, callback) => {
+    console.log('🔗 Request Origin:', origin);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn('❌ CORS Blocked Origin:', origin);
+      callback(new Error('CORS policy: This origin is not allowed.'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+}));
 
+// ✅ Body parser
 app.use(express.json());
 
-// ✅ MongoDB URI from .env
+// ✅ MongoDB URI
 const uri = process.env.MONGODB_URI || `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 if (!uri) {
-  console.error('❌ MongoDB URI is not defined. Set MONGODB_URI or DB_USER/DB_PASS.');
+  console.error('❌ MongoDB URI is missing. Please define it in .env');
 }
 
-const client = new MongoClient(uri, {
-  serverApi: ServerApiVersion.v1,
-});
+const client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
 
 let volunteerCollection;
 let applicationsCollection;
 let isDbConnected = false;
 
+// ✅ Connect to MongoDB
 async function startServer() {
   try {
     console.log('🔄 Connecting to MongoDB...');
     await client.connect();
     await client.db('admin').command({ ping: 1 });
+
     const db = client.db('Volunteer-service');
     volunteerCollection = db.collection('volunteer');
     applicationsCollection = db.collection('applications');
     isDbConnected = true;
-    console.log('✅ MongoDB Connected');
 
-    // Local only
+    console.log('✅ MongoDB connected successfully');
+
+    // Start server locally only
     if (process.env.NODE_ENV !== 'serverless') {
       const PORT = process.env.PORT || 3000;
       app.listen(PORT, () => {
-        console.log(`🚀 Server is running at http://localhost:${PORT}`);
+        console.log(`🚀 Server is running on http://localhost:${PORT}`);
       });
     }
   } catch (err) {
-    console.error('❌ Failed to connect to MongoDB:', err.message);
+    console.error('❌ MongoDB connection failed:', err.message);
     isDbConnected = false;
   }
 }
 
 startServer();
 
-// ✅ Middleware to check DB connection
+// ✅ Middleware to check DB
 const checkDbConnection = (req, res, next) => {
   if (!isDbConnected) {
     return res.status(503).json({
@@ -179,6 +180,15 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error', message: err.message });
 });
 
-// ✅ Export for Vercel (serverless)
+// ✅ Serverless export for Vercel
 module.exports = app;
-module.exports.handler = require('serverless-http')(app);
+module.exports.handler = serverless(app, {
+  response: (res) => {
+    // Ensure CORS headers for Vercel Edge
+    if (res && res.headers) {
+      res.headers['Access-Control-Allow-Origin'] = '*';
+      res.headers['Access-Control-Allow-Credentials'] = true;
+    }
+    return res;
+  },
+});
