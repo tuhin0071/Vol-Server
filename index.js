@@ -47,7 +47,7 @@ let isDbConnected = false;
 async function startServer() {
   try {
     console.log('🔄 Connecting to MongoDB...');
-    await client.connect();
+    // await client.connect();
     await client.db('admin').command({ ping: 1 });
 
     const db = client.db('Volunteer-service');
