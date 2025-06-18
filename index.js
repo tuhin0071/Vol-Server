@@ -9,7 +9,7 @@ const app = express();
 // ✅ Allowed origins (no trailing slashes)
 const allowedOrigins = [
   'https://dulcet-wisp-054d6c.netlify.app',
-  'https://heroic-heliotrope-56f49d.netlify.app',
+  'https://prismatic-maamoul-4681c4.netlify.app',
 ];
 
 // ✅ CORS setup
