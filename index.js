@@ -8,10 +8,7 @@ const app = express();
 // ✅ Allowed origins - no trailing slashes
 const allowedOrigins = [
   'https://dulcet-wisp-054d6c.netlify.app',
-  'http://localhost:5173',
-  'http://localhost:5174',
-  
-  'https://volunteer-server-sepia.vercel.app'
+ 
 ];
 
 // ✅ CORS Setup
