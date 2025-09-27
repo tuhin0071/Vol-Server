@@ -1,194 +1,156 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const serverless = require('serverless-http');
 const { MongoClient, ObjectId, ServerApiVersion } = require('mongodb');
-require('dotenv').config();
 
+// ----------------- Express App -----------------
 const app = express();
 
-// ✅ Allowed origins (no trailing slashes)
+// ----------------- CORS -----------------
 const allowedOrigins = [
-  'https://dulcet-wisp-054d6c.netlify.app',
-  'https://prismatic-maamoul-4681c4.netlify.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'https://volauth-8cd3a.web.app',
+  'https://your-frontend.vercel.app' // Add Vercel frontend here
 ];
 
-// ✅ CORS setup
+app.use((req, res, next) => {
+  console.log("Request Origin:", req.headers.origin);
+  next();
+});
+
+app.use(express.json());
 app.use(cors({
-  origin: (origin, callback) => {
-    console.log('🔗 Request Origin:', origin);
+  origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn('❌ CORS Blocked Origin:', origin);
-      callback(new Error('CORS policy: This origin is not allowed.'));
+      return callback(null, true);
     }
+    console.error("❌ Blocked by CORS:", origin);
+    callback(new Error("CORS policy: This origin is not allowed."));
   },
   credentials: true,
-  optionsSuccessStatus: 200,
 }));
 
-// ✅ Body parser
-app.use(express.json());
-
-// ✅ MongoDB URI
-const uri = process.env.MONGODB_URI || `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
-if (!uri) {
-  console.error('❌ MongoDB URI is missing. Please define it in .env');
-}
-
+// ----------------- MongoDB Setup -----------------
+const uri = process.env.MONGODB_URI || `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
 
 let volunteerCollection;
 let applicationsCollection;
+let usersCollection;
 let isDbConnected = false;
 
-// ✅ Connect to MongoDB
-async function startServer() {
-  try {
+async function connectDb() {
+  if (!isDbConnected) {
     console.log('🔄 Connecting to MongoDB...');
-    // await client.connect();
     await client.db('admin').command({ ping: 1 });
 
     const db = client.db('Volunteer-service');
     volunteerCollection = db.collection('volunteer');
     applicationsCollection = db.collection('applications');
+    usersCollection = db.collection('users');
+
     isDbConnected = true;
-
     console.log('✅ MongoDB connected successfully');
-
-    // Start server locally only
-    if (process.env.NODE_ENV !== 'serverless') {
-      const PORT = process.env.PORT || 3000;
-      app.listen(PORT, () => {
-        console.log(`🚀 Server is running on http://localhost:${PORT}`);
-      });
-    }
-  } catch (err) {
-    console.error('❌ MongoDB connection failed:', err.message);
-    isDbConnected = false;
   }
 }
+connectDb();
 
-startServer();
-
-// ✅ Middleware to check DB
+// ----------------- Middleware -----------------
 const checkDbConnection = (req, res, next) => {
-  if (!isDbConnected) {
-    return res.status(503).json({
-      error: 'Database not connected',
-      message: 'Check MongoDB connection',
-    });
-  }
+  if (!isDbConnected) return res.status(503).json({ error: 'Database not connected' });
   next();
 };
 
-// ✅ Routes
-
+// ----------------- Routes -----------------
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Volunteer API is running',
-    dbConnected: isDbConnected,
-  });
+  res.json({ message: 'Volunteer API running on Vercel', dbConnected: isDbConnected });
 });
 
+// Volunteer Posts
 app.get('/volunteer', checkDbConnection, async (req, res) => {
-  try {
-    const volunteers = await volunteerCollection.find().toArray();
-    res.json(volunteers);
-  } catch (err) {
-    res.status(500).json({ error: 'Error fetching volunteers', details: err.message });
-  }
-});
-
-app.get('/volunteer/:id', checkDbConnection, async (req, res) => {
-  if (!ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid ID format' });
-  }
-  try {
-    const volunteer = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
-    if (!volunteer) return res.status(404).json({ error: 'Volunteer not found' });
-    res.json(volunteer);
-  } catch (err) {
-    res.status(500).json({ error: 'Error fetching volunteer', details: err.message });
-  }
+  const volunteers = await volunteerCollection.find().toArray();
+  res.json(volunteers);
 });
 
 app.post('/volunteer', checkDbConnection, async (req, res) => {
-  try {
-    const result = await volunteerCollection.insertOne(req.body);
-    res.status(201).json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Error creating volunteer', details: err.message });
-  }
+  const result = await volunteerCollection.insertOne(req.body);
+  res.status(201).json(result);
 });
 
-app.patch('/volunteer/:id/decrease', checkDbConnection, async (req, res) => {
-  if (!ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid ID format' });
-  }
-  try {
-    const result = await volunteerCollection.updateOne(
-      { _id: new ObjectId(req.params.id) },
-      { $inc: { volunteersNeeded: -1 } }
-    );
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ error: 'Volunteer not found' });
-    }
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Error updating volunteersNeeded', details: err.message });
-  }
+app.get('/volunteer/:id', checkDbConnection, async (req, res) => {
+  if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const volunteer = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
+  if (!volunteer) return res.status(404).json({ error: 'Volunteer not found' });
+  res.json(volunteer);
 });
 
 app.delete('/volunteer/:id', checkDbConnection, async (req, res) => {
-  if (!ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid ID format' });
-  }
-  try {
-    const result = await volunteerCollection.deleteOne({ _id: new ObjectId(req.params.id) });
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ error: 'Volunteer not found' });
+  if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const userEmail = req.headers['x-user-email'];
+  if (!userEmail) return res.status(401).json({ error: 'Unauthorized - email missing' });
+
+  const post = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
+  if (!post) return res.status(404).json({ error: 'Volunteer post not found' });
+  if (post.organizerEmail !== userEmail) return res.status(403).json({ error: 'Forbidden - you cannot delete this post' });
+
+  await volunteerCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+  res.json({ message: 'Volunteer post deleted successfully' });
+});
+
+app.put('/volunteer/:id', checkDbConnection, async (req, res) => {
+  if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const userEmail = req.headers['x-user-email'];
+  if (!userEmail) return res.status(401).json({ error: 'Unauthorized - email missing' });
+
+  const post = await volunteerCollection.findOne({ _id: new ObjectId(req.params.id) });
+  if (!post) return res.status(404).json({ error: 'Volunteer post not found' });
+  if (post.organizerEmail !== userEmail) return res.status(403).json({ error: 'Forbidden - you cannot edit this post' });
+
+  const updatedPost = {
+    $set: {
+      title: req.body.title,
+      description: req.body.description,
+      category: req.body.category,
+      location: req.body.location,
+      volunteers: req.body.volunteers,
+      deadline: req.body.deadline,
+      thumbnail: req.body.thumbnail,
     }
-    res.json({ message: 'Volunteer post deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Error deleting volunteer', details: err.message });
-  }
+  };
+  await volunteerCollection.updateOne({ _id: new ObjectId(req.params.id) }, updatedPost);
+  res.json({ message: 'Volunteer post updated successfully' });
+});
+
+// Applications
+app.get('/applications', checkDbConnection, async (req, res) => {
+  const applications = await applicationsCollection.find().toArray();
+  res.json(applications);
 });
 
 app.post('/applications', checkDbConnection, async (req, res) => {
-  try {
-    const result = await applicationsCollection.insertOne(req.body);
-    res.status(201).json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Error creating application', details: err.message });
-  }
+  const result = await applicationsCollection.insertOne(req.body);
+  res.status(201).json(result);
 });
 
-app.get('/applications', checkDbConnection, async (req, res) => {
-  try {
-    const applications = await applicationsCollection.find().toArray();
-    res.json(applications);
-  } catch (err) {
-    res.status(500).json({ error: 'Error fetching applications', details: err.message });
-  }
+app.delete('/applications/:id', checkDbConnection, async (req, res) => {
+  if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const result = await applicationsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+  if (result.deletedCount === 0) return res.status(404).json({ error: 'Application not found' });
+  res.json({ message: 'Application deleted successfully' });
 });
 
-// ✅ Global error handler
-app.use((err, req, res, next) => {
-  console.error('🚨 Unhandled error:', err.message);
-  res.status(500).json({ error: 'Internal server error', message: err.message });
+// Users
+app.get('/users', checkDbConnection, async (req, res) => {
+  const users = await usersCollection.find().toArray();
+  res.json(users);
 });
 
-// ✅ Serverless export for Vercel
+app.post('/users', checkDbConnection, async (req, res) => {
+  const result = await usersCollection.insertOne(req.body);
+  res.status(201).json(result);
+});
+
+// ----------------- Export for Vercel -----------------
 module.exports = app;
-module.exports.handler = serverless(app, {
-  response: (res) => {
-    // Ensure CORS headers for Vercel Edge
-    if (res && res.headers) {
-      res.headers['Access-Control-Allow-Origin'] = '*';
-      res.headers['Access-Control-Allow-Credentials'] = true;
-    }
-    return res;
-  },
-});
