@@ -78,7 +78,7 @@ app.get('/', (req, res) => {
 });
 
 // ✅ Get all posts
-app.get('/api/volunteer', checkDbConnection, async (req, res) => {
+app.get('/volunteer', checkDbConnection, async (req, res) => {
   try {
     const volunteers = await volunteerCollection.find().toArray();
     res.json(volunteers);
@@ -88,7 +88,7 @@ app.get('/api/volunteer', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Create post
-app.post('/api/volunteer', checkDbConnection, async (req, res) => {
+app.post('/volunteer', checkDbConnection, async (req, res) => {
   try {
     const result = await volunteerCollection.insertOne(req.body);
     res.status(201).json(result);
@@ -98,7 +98,7 @@ app.post('/api/volunteer', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Get single post
-app.get('/api/volunteer/:id', checkDbConnection, async (req, res) => {
+app.get('/volunteer/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
 
   try {
@@ -111,7 +111,7 @@ app.get('/api/volunteer/:id', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Delete post (only by creator)
-app.delete('/api/volunteer/:id', checkDbConnection, async (req, res) => {
+app.delete('/volunteer/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
 
   const userEmail = req.headers['x-user-email'];
@@ -134,7 +134,7 @@ app.delete('/api/volunteer/:id', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Applications
-app.get('/api/applications', checkDbConnection, async (req, res) => {
+app.get('/applications', checkDbConnection, async (req, res) => {
   try {
     const applications = await applicationsCollection.find().toArray();
     res.json(applications);
@@ -144,7 +144,7 @@ app.get('/api/applications', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Get posts by user email
-app.get('/api/volunteer/user/:email', checkDbConnection, async (req, res) => {
+app.get('/volunteer/user/:email', checkDbConnection, async (req, res) => {
   try {
     const email = req.params.email;
     const volunteers = await volunteerCollection.find({ organizerEmail: email }).toArray();
@@ -155,7 +155,7 @@ app.get('/api/volunteer/user/:email', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Update volunteer post (only by creator)
-app.put('/api/volunteer/:id', checkDbConnection, async (req, res) => {
+app.put('/volunteer/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: 'Invalid ID' });
   }
@@ -200,7 +200,7 @@ app.put('/api/volunteer/:id', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Create application
-app.post('/api/applications', checkDbConnection, async (req, res) => {
+app.post('/applications', checkDbConnection, async (req, res) => {
   try {
     const result = await applicationsCollection.insertOne(req.body);
     res.status(201).json(result);
@@ -210,7 +210,7 @@ app.post('/api/applications', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Delete application
-app.delete('/api/applications/:id', checkDbConnection, async (req, res) => {
+app.delete('/applications/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
 
   try {
@@ -223,7 +223,7 @@ app.delete('/api/applications/:id', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Users
-app.get('/api/users', checkDbConnection, async (req, res) => {
+app.get('/users', checkDbConnection, async (req, res) => {
   try {
     const users = await usersCollection.find().toArray();
     res.json(users);
@@ -232,7 +232,7 @@ app.get('/api/users', checkDbConnection, async (req, res) => {
   }
 });
 
-app.post('/api/users', checkDbConnection, async (req, res) => {
+app.post('/users', checkDbConnection, async (req, res) => {
   try {
     const result = await usersCollection.insertOne(req.body);
     res.status(201).json(result);
