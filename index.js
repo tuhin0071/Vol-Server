@@ -1,3 +1,5 @@
+// api/index.js (Vercel serverless function)
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ObjectId, ServerApiVersion } = require('mongodb');
@@ -11,13 +13,16 @@ const allowedOrigins = [
   'http://localhost:3000',   // CRA dev
   'http://localhost:5000',   // server itself
   'https://volauth-8cd3a.web.app', // deployed frontend
+  'https://your-vercel-domain.vercel.app', // Add your Vercel domain
 ];
 
-// Debug: log request origins
-app.use((req, res, next) => {
-  console.log("Request Origin:", req.headers.origin);
-  next();
-});
+// Debug: log request origins (only in development)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    console.log("Request Origin:", req.headers.origin);
+    next();
+  });
+}
 
 // Middleware
 app.use(express.json());
@@ -35,39 +40,24 @@ app.use(cors({
 // ----------------- MongoDB Setup -----------------
 const uri = process.env.MONGODB_URI || `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority`;
 
+// Create a global client variable
 let client;
 let volunteerCollection;
 let applicationsCollection;
 let usersCollection;
 
+// Initialize MongoDB connection
 async function connectToDatabase() {
   if (!client) {
-    client = new MongoClient(uri, { 
-      serverApi: ServerApiVersion.v1,
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    });
+    client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
+    await client.connect();
     
-    try {
-      await client.connect();
-      console.log('✅ MongoDB connected successfully');
-      
-      const db = client.db('Volunteer-service');
-      volunteerCollection = db.collection('volunteer');
-      applicationsCollection = db.collection('applications');
-      usersCollection = db.collection('users');
-    } catch (error) {
-      console.error('❌ MongoDB connection failed:', error.message);
-      throw error;
-    }
+    const db = client.db('Volunteer-service');
+    volunteerCollection = db.collection('volunteer');
+    applicationsCollection = db.collection('applications');
+    usersCollection = db.collection('users');
   }
-  
-  return {
-    volunteerCollection,
-    applicationsCollection,
-    usersCollection
-  };
+  return client;
 }
 
 // ----------------- Middleware -----------------
@@ -76,17 +66,18 @@ const checkDbConnection = async (req, res, next) => {
     await connectToDatabase();
     next();
   } catch (error) {
-    res.status(503).json({ error: 'Database connection failed', message: error.message });
+    console.error('Database connection error:', error);
+    return res.status(503).json({ error: 'Database connection failed' });
   }
 };
 
 // ----------------- Routes -----------------
 app.get('/', (req, res) => {
-  res.json({ message: 'Volunteer API running on Vercel', status: 'ok' });
+  res.json({ message: 'Volunteer API running on Vercel', timestamp: new Date().toISOString() });
 });
 
 // ✅ Get all posts
-app.get('/volunteer', checkDbConnection, async (req, res) => {
+app.get('/api/volunteer', checkDbConnection, async (req, res) => {
   try {
     const volunteers = await volunteerCollection.find().toArray();
     res.json(volunteers);
@@ -96,7 +87,7 @@ app.get('/volunteer', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Create post
-app.post('/volunteer', checkDbConnection, async (req, res) => {
+app.post('/api/volunteer', checkDbConnection, async (req, res) => {
   try {
     const result = await volunteerCollection.insertOne(req.body);
     res.status(201).json(result);
@@ -106,7 +97,7 @@ app.post('/volunteer', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Get single post
-app.get('/volunteer/:id', checkDbConnection, async (req, res) => {
+app.get('/api/volunteer/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
 
   try {
@@ -119,7 +110,7 @@ app.get('/volunteer/:id', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Delete post (only by creator)
-app.delete('/volunteer/:id', checkDbConnection, async (req, res) => {
+app.delete('/api/volunteer/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
 
   const userEmail = req.headers['x-user-email'];
@@ -142,7 +133,7 @@ app.delete('/volunteer/:id', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Applications
-app.get('/applications', checkDbConnection, async (req, res) => {
+app.get('/api/applications', checkDbConnection, async (req, res) => {
   try {
     const applications = await applicationsCollection.find().toArray();
     res.json(applications);
@@ -152,7 +143,7 @@ app.get('/applications', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Get posts by user email
-app.get('/volunteer/user/:email', checkDbConnection, async (req, res) => {
+app.get('/api/volunteer/user/:email', checkDbConnection, async (req, res) => {
   try {
     const email = req.params.email;
     const volunteers = await volunteerCollection.find({ organizerEmail: email }).toArray();
@@ -163,7 +154,7 @@ app.get('/volunteer/user/:email', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Update volunteer post (only by creator)
-app.put('/volunteer/:id', checkDbConnection, async (req, res) => {
+app.put('/api/volunteer/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: 'Invalid ID' });
   }
@@ -208,7 +199,7 @@ app.put('/volunteer/:id', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Create application
-app.post('/applications', checkDbConnection, async (req, res) => {
+app.post('/api/applications', checkDbConnection, async (req, res) => {
   try {
     const result = await applicationsCollection.insertOne(req.body);
     res.status(201).json(result);
@@ -218,7 +209,7 @@ app.post('/applications', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Delete application
-app.delete('/applications/:id', checkDbConnection, async (req, res) => {
+app.delete('/api/applications/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
 
   try {
@@ -231,7 +222,7 @@ app.delete('/applications/:id', checkDbConnection, async (req, res) => {
 });
 
 // ✅ Users
-app.get('/users', checkDbConnection, async (req, res) => {
+app.get('/api/users', checkDbConnection, async (req, res) => {
   try {
     const users = await usersCollection.find().toArray();
     res.json(users);
@@ -240,7 +231,7 @@ app.get('/users', checkDbConnection, async (req, res) => {
   }
 });
 
-app.post('/users', checkDbConnection, async (req, res) => {
+app.post('/api/users', checkDbConnection, async (req, res) => {
   try {
     const result = await usersCollection.insertOne(req.body);
     res.status(201).json(result);
