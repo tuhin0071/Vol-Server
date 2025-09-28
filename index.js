@@ -13,7 +13,8 @@ const allowedOrigins = [
   'http://localhost:3000',   // CRA dev
   'http://localhost:5000',   // server itself
   'https://volauth-8cd3a.web.app', // deployed frontend
-  'https://your-vercel-domain.vercel.app', // Add your Vercel domain
+  'https://vol-server-mu.vercel.app/',
+  'https://vol-server-mu.vercel.app' // Add your Vercel domain
 ];
 
 // Debug: log request origins (only in development)
