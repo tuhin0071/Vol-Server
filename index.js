@@ -374,37 +374,72 @@ app.post('/applications', checkDbConnection, async (req, res) => {
   }
 });
 
-// Delete application
+// ✅ FIXED: Delete application with better error handling and logging
 app.delete('/applications/:id', checkDbConnection, async (req, res) => {
   const { id } = req.params;
   
+  console.log('=== DELETE APPLICATION REQUEST ===');
+  console.log('Received ID:', id);
+  console.log('ID type:', typeof id);
+  console.log('ID length:', id.length);
+  
+  // Validate ObjectId format
   if (!ObjectId.isValid(id)) {
-    console.error('Invalid application ID format:', id);
-    return res.status(400).json({ error: 'Invalid application ID format' });
+    console.error('❌ Invalid ObjectId format:', id);
+    return res.status(400).json({ 
+      error: 'Invalid application ID format',
+      receivedId: id,
+      idLength: id.length,
+      expectedLength: 24
+    });
   }
 
   try {
-    console.log('Attempting to delete application:', id);
+    const objectId = new ObjectId(id);
+    console.log('Converted to ObjectId:', objectId);
     
-    // First, check if the application exists
-    const application = await applicationsCollection.findOne({ _id: new ObjectId(id) });
+    // Check if application exists
+    const application = await applicationsCollection.findOne({ _id: objectId });
+    console.log('Found application:', application ? 'Yes' : 'No');
     
     if (!application) {
-      console.error('Application not found:', id);
-      return res.status(404).json({ error: 'Application not found' });
+      console.error('❌ Application not found:', id);
+      
+      // Debug: Get sample applications to compare
+      const sampleApps = await applicationsCollection.find().limit(3).toArray();
+      console.log('Sample application IDs in database:', 
+        sampleApps.map(app => ({
+          _id: app._id.toString(),
+          title: app.volunteerTitle
+        }))
+      );
+      
+      return res.status(404).json({ 
+        error: 'Application not found',
+        searchedId: id,
+        hint: 'The application may have already been deleted or the ID is incorrect'
+      });
     }
 
-    console.log('Found application:', application);
+    console.log('Application data:', {
+      _id: application._id.toString(),
+      volunteerTitle: application.volunteerTitle,
+      userEmail: application.userEmail
+    });
 
     // Delete the application
-    const result = await applicationsCollection.deleteOne({ _id: new ObjectId(id) });
+    const result = await applicationsCollection.deleteOne({ _id: objectId });
     
     if (result.deletedCount === 0) {
-      console.error('Failed to delete application:', id);
-      return res.status(404).json({ error: 'Failed to delete application' });
+      console.error('❌ Delete operation returned 0 deleted count');
+      return res.status(500).json({ 
+        error: 'Failed to delete application',
+        details: 'Delete operation completed but no documents were deleted'
+      });
     }
 
-    console.log('Application deleted successfully:', id);
+    console.log('✅ Application deleted successfully');
+    console.log('Deleted count:', result.deletedCount);
 
     res.json({ 
       success: true,
@@ -412,9 +447,15 @@ app.delete('/applications/:id', checkDbConnection, async (req, res) => {
       deletedId: id,
       deletedCount: result.deletedCount
     });
+    
   } catch (err) {
-    console.error('Error deleting application:', err);
-    res.status(500).json({ error: 'Failed to delete application', message: err.message });
+    console.error('❌ Error deleting application:', err);
+    console.error('Error stack:', err.stack);
+    res.status(500).json({ 
+      error: 'Failed to delete application', 
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 
