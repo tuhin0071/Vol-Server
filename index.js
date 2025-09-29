@@ -9,15 +9,15 @@ const app = express();
 // ----------------- CORS -----------------
 const allowedOrigins = [
   'http://localhost:5173',   // Vite dev
-  'http://127.0.0.1:5173',   // sometimes browser uses 127.0.0.1 instead of localhost
+  'http://127.0.0.1:5173',
   'http://localhost:3000',   // CRA dev
   'http://localhost:5000',   // server itself
   'https://volauth-8cd3a.web.app', // deployed frontend
-  'https://vol-server-mu.vercel.app/',
-  'https://vol-server-mu.vercel.app' // Add your Vercel domain
+  'https://vol-server-mu.vercel.app',
+  'https://vol-server-mu.vercel.app/' 
 ];
 
-// Debug: log request origins (only in development)
+// Debug log (only in dev)
 if (process.env.NODE_ENV !== 'production') {
   app.use((req, res, next) => {
     console.log("Request Origin:", req.headers.origin);
@@ -41,18 +41,16 @@ app.use(cors({
 // ----------------- MongoDB Setup -----------------
 const uri = process.env.MONGODB_URI || `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.a3vfxtj.mongodb.net/?retryWrites=true&w=majority`;
 
-// Create a global client variable
 let client;
 let volunteerCollection;
 let applicationsCollection;
 let usersCollection;
 
-// Initialize MongoDB connection
 async function connectToDatabase() {
   if (!client) {
     client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
     await client.connect();
-    
+
     const db = client.db('Volunteer-service');
     volunteerCollection = db.collection('volunteer');
     applicationsCollection = db.collection('applications');
@@ -61,7 +59,7 @@ async function connectToDatabase() {
   return client;
 }
 
-// ----------------- Middleware -----------------
+// Middleware to check DB connection
 const checkDbConnection = async (req, res, next) => {
   try {
     await connectToDatabase();
@@ -77,7 +75,7 @@ app.get('/', (req, res) => {
   res.json({ message: 'Volunteer API running on Vercel', timestamp: new Date().toISOString() });
 });
 
-// ✅ Get all posts
+// ✅ Get all volunteers
 app.get('/volunteer', checkDbConnection, async (req, res) => {
   try {
     const volunteers = await volunteerCollection.find().toArray();
@@ -87,7 +85,7 @@ app.get('/volunteer', checkDbConnection, async (req, res) => {
   }
 });
 
-// ✅ Create post
+// ✅ Create volunteer post
 app.post('/volunteer', checkDbConnection, async (req, res) => {
   try {
     const result = await volunteerCollection.insertOne(req.body);
@@ -97,7 +95,7 @@ app.post('/volunteer', checkDbConnection, async (req, res) => {
   }
 });
 
-// ✅ Get single post
+// ✅ Get single volunteer
 app.get('/volunteer/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
 
@@ -110,7 +108,7 @@ app.get('/volunteer/:id', checkDbConnection, async (req, res) => {
   }
 });
 
-// ✅ Delete post (only by creator)
+// ✅ Delete volunteer post (only by creator)
 app.delete('/volunteer/:id', checkDbConnection, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
 
@@ -182,7 +180,7 @@ app.put('/volunteer/:id', checkDbConnection, async (req, res) => {
         description: req.body.description,
         category: req.body.category,
         location: req.body.location,
-        volunteers: req.body.volunteers,
+        volunteersNeeded: req.body.volunteersNeeded,
         deadline: req.body.deadline,
         thumbnail: req.body.thumbnail,
       }
@@ -236,6 +234,47 @@ app.post('/users', checkDbConnection, async (req, res) => {
   try {
     const result = await usersCollection.insertOne(req.body);
     res.status(201).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Decrease volunteersNeeded
+app.patch('/volunteer/:id/decrease', checkDbConnection, async (req, res) => {
+  const { id } = req.params;
+  if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
+
+  try {
+    const volunteer = await volunteerCollection.findOne({ _id: new ObjectId(id) });
+    if (!volunteer) return res.status(404).json({ error: 'Volunteer not found' });
+
+    if (volunteer.volunteersNeeded <= 0) {
+      return res.status(400).json({ error: 'No volunteers needed left' });
+    }
+
+    const result = await volunteerCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $inc: { volunteersNeeded: -1 } }
+    );
+
+    res.json({ message: 'Volunteers count decreased', result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Increase volunteersNeeded (optional, for cancel/delete)
+app.patch('/volunteer/:id/increase', checkDbConnection, async (req, res) => {
+  const { id } = req.params;
+  if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
+
+  try {
+    const result = await volunteerCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $inc: { volunteersNeeded: 1 } }
+    );
+
+    res.json({ message: 'Volunteers count increased', result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
